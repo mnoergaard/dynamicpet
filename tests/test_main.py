@@ -267,9 +267,9 @@ def test_kineticmodel_suvr(images: dict[str, Path]) -> None:
         suvr[i] = pet_km_suvr[rois_img.get_fdata() == i + 1].mean()
 
     # check that the suvr of the reference region is 1.0
-    assert np.round(suvr[0], 4) == 1.0, (
-        f"Expected SUVR of 1.0 in reference, got {np.round(suvr[0], 4)}"
-    )
+    assert (
+        np.round(suvr[0], 4) == 1.0
+    ), f"Expected SUVR of 1.0 in reference, got {np.round(suvr[0], 4)}"
     assert np.allclose(rois_km_suvr, suvr, rtol=1e-3, atol=1e-3), "Mismatching SUVRs"
 
 
@@ -346,3 +346,44 @@ def test_kineticmodel_srtmzhou2003(images: dict[str, Path]) -> None:
         outputdir / "sub-000101_ses-baseline_model-SRTM_meas-R1_mimap.nii"
     ).is_file(), msg
     assert (outputdir / "sub-000101_ses-baseline_model-SRTM_mimap.json").is_file(), msg
+
+
+def test_kineticmodel_ma1_inputfunction(images: dict[str, Path]) -> None:
+    """Test MA1 kineticmodel in __main__ with bloodstream derivative."""
+    from dynamicpet.__main__ import kineticmodel
+
+    rois_csv_fname = images["rois_csv_fname"]
+    petjson_fname = images["petjson_fname"]
+    inputf = (
+        Path("data/bloodstream/sub-01/ses-baseline/pet")
+        / "sub-01_ses-baseline_inputfunction.tsv"
+    )
+    outputdir = rois_csv_fname.parent / "test_output" / "ma1"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        kineticmodel,
+        [
+            str(rois_csv_fname),
+            "--model",
+            "ma1",
+            "--refroi",
+            "ROI1",
+            "--json",
+            str(petjson_fname),
+            "--inputfunction",
+            str(inputf),
+            "--start",
+            "0",
+            "--end",
+            "30",
+            "--outputdir",
+            str(outputdir),
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, "Kineticmodel had an error"
+    assert (
+        outputdir / "sub-000101_ses-baseline_model-MA1_kinpar.tsv"
+    ).is_file(), "Couldn't find kineticmodel output file"

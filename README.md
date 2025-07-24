@@ -47,8 +47,10 @@ Methods implemented in the CLI include:
 
 The blood-based models require a plasma TAC describing the
 radiotracer concentration in plasma. A whole blood TAC can also be
-provided for blood volume correction. These are supplied via the
-`--plasmatac` and `--bloodtac` options of the `kineticmodel` CLI.
+provided for blood volume correction. These TACs can be supplied via
+the `--plasmatac` and `--bloodtac` options or together as a
+bloodstream derivative using the `--inputfunction` option of the
+`kineticmodel` CLI.
 
 Several implementations of estimating SRTM parameters are available:
 
@@ -91,6 +93,14 @@ After installing _Dynamic PET_ as described above, execute:
 
 ```console
 kineticmodel PET --model SRTMZhou2003 --refmask <REFMASK> --outputdir <OUTPUTDIR> --fwhm 5
+```
+
+If you have a bloodstream derivative describing the arterial input
+function, you can instead run
+
+```console
+kineticmodel PET --model MA1 --refmask <REFMASK> \
+    --inputfunction <BLOODSTREAM_DERIVATIVE> --outputdir <OUTPUTDIR>
 ```
 
 where
