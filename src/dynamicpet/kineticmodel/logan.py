@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import warnings
+
 import numpy as np
 from numpy.linalg import LinAlgError
 from scipy.linalg import solve  # type: ignore[import-untyped]
@@ -97,7 +99,25 @@ class LRTM(KineticModel):
             # Check Eq. 7 assumption (i.e., that tac / reftac is reasonably
             # constant) by calculating R2 etc. for each tac.
             # Display warning if assumption is off.
-            pass
+            t = self.reftac.frame_mid[t_idx].astype("float")[:, np.newaxis]
+            x_r2 = np.column_stack((t, np.ones_like(t)))
+            r2_vals = np.zeros(num_elements)
+            for k in range(num_elements):
+                ratio = (tacs_mat_tstar[k, :] / reftac_tstar[:, 0])[:, np.newaxis]
+                coef, *_ = np.linalg.lstsq(x_r2, ratio, rcond=None)
+                ratio_fit = x_r2 @ coef
+                ss_res = float(np.sum((ratio - ratio_fit) ** 2))
+                ss_tot = float(np.sum((ratio - ratio.mean()) ** 2))
+                r2_vals[k] = 1 - ss_res / ss_tot if ss_tot != 0 else 0
+            if np.any(r2_vals > 0.2):
+                warnings.warn(
+                    (
+                        "tac / reftac ratio varies with time; "
+                        "Logan Eq. 7 assumption may be violated"
+                    ),
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
 
         for k in trange(num_elements):
             # get TAC and its cumulative integral as 1-D vectors

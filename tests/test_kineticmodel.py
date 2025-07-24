@@ -127,6 +127,22 @@ def test_logan_tm(reftac: TemporalMatrix, tacs_img: TemporalImage) -> None:
     assert dvr_img.shape == (1, 1, 2), "Mismatching shape"
 
 
+def test_logan_ratio_warning(
+    reftac: TemporalMatrix,
+    frame_start: NDArray[np.double],
+    frame_duration: NDArray[np.double],
+) -> None:
+    """Warn if tac/reftac ratio is not constant."""
+    bad_tac = TemporalMatrix(
+        np.array([[30, 60, 90, 120]], dtype=np.double),
+        frame_start,
+        frame_duration,
+    )
+    km = LRTM(reftac, bad_tac)
+    with pytest.warns(RuntimeWarning):
+        km.fit(integration_type="trapz")
+
+
 def test_patlak_tm(reftac: TemporalMatrix, tacs_img: TemporalImage) -> None:
     """Test Patlak Plot using TemporalImage."""
     km = PRTM(reftac, tacs_img)
