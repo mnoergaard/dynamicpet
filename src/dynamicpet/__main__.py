@@ -247,6 +247,18 @@ def denoise(  # noqa: PLR0912, PLR0913
     ),
 )
 @click.option(
+    "--plasmatac",
+    default=None,
+    type=str,
+    help="Tabular plasma TAC file for blood-based models",
+)
+@click.option(
+    "--bloodtac",
+    default=None,
+    type=str,
+    help="Tabular whole blood TAC file for blood-based models",
+)
+@click.option(
     "--petmask",
     default=None,
     type=str,
@@ -316,6 +328,8 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
     refmask: str | None,
     outputdir: str | None,
     json: str | None,
+    plasmatac: str | None,
+    bloodtac: str | None,
     petmask: str | None,
     start: float | None,
     end: float | None,
@@ -336,12 +350,14 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
     froot, ext, addext = splitext_addext(pet)
 
-    pet_img, reftac, petmask_img_mat = parse_kineticmodel_inputs(
+    pet_img, reftac, petmask_img_mat, plasma_tac, blood_tac = parse_kineticmodel_inputs(
         pet,
         json,
         refroi,
         refmask,
         petmask,
+        plasmatac,
+        bloodtac,
     )
 
     if start is None:
@@ -351,6 +367,10 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
     if start != pet_img.start_time or end != pet_img.end_time:
         pet_img = pet_img.extract(start, end)
         reftac = reftac.extract(start, end)
+        if plasma_tac is not None:
+            plasma_tac = plasma_tac.extract(start, end)
+        if blood_tac is not None:
+            blood_tac = blood_tac.extract(start, end)
 
     if fwhm and model not in ["srtmzhou2003"]:
         fwhm = None
@@ -381,6 +401,14 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
             stacklevel=2,
         )
 
+    if model in ["ma1", "loganblood", "onetcm", "twotcm"]:
+        if plasma_tac is None:
+            msg = "--plasmatac must be specified for plasma input models"
+            raise ValueError(msg)
+        input_tac = plasma_tac
+    else:
+        input_tac = reftac
+
     # fit kinetic model
     km: KineticModel
     match model:
@@ -404,38 +432,45 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
         case "ma1":
             model_abbr = "MA1"
             try:
-                from dynamicpet.kineticmodel.ma1 import MA1  # type: ignore
+                from dynamicpet.kineticmodel.ma1 import (
+                    MA1,  # type: ignore[import-not-found]
+                )
             except Exception as exc:  # pragma: no cover - optional dep
-                raise NotImplementedError("MA1 model not available") from exc
-            km = MA1(reftac, pet_img)
+                msg = "MA1 model not available"
+                raise NotImplementedError(msg) from exc
+            km = MA1(input_tac, pet_img)
             km.fit(
                 mask=petmask_img_mat,
                 integration_type=integration_type,
                 weight_by=weight_by,
-                tstar=tstar,
-                fit_end_time=fit_end_time,
+                tstar=0.0 if tstar is None else tstar,
             )
         case "loganblood":
             model_abbr = "Logan"
             try:
-                from dynamicpet.kineticmodel.logan import LoganBlood  # type: ignore
+                from dynamicpet.kineticmodel.logan import (
+                    LoganBlood,  # type: ignore[import-not-found]
+                )
             except Exception as exc:  # pragma: no cover - optional dep
-                raise NotImplementedError("LoganBlood model not available") from exc
-            km = LoganBlood(reftac, pet_img)
+                msg = "LoganBlood model not available"
+                raise NotImplementedError(msg) from exc
+            km = LoganBlood(input_tac, pet_img)
             km.fit(
                 mask=petmask_img_mat,
                 integration_type=integration_type,
                 weight_by=weight_by,
-                tstar=tstar,
-                fit_end_time=fit_end_time,
+                tstar=0.0 if tstar is None else tstar,
             )
         case "onetcm":
             model_abbr = "1TCM"
             try:
-                from dynamicpet.kineticmodel.onetcm import OneTCM  # type: ignore
+                from dynamicpet.kineticmodel.onetcm import (
+                    OneTCM,  # type: ignore[import-not-found]
+                )
             except Exception as exc:  # pragma: no cover - optional dep
-                raise NotImplementedError("OneTCM model not available") from exc
-            km = OneTCM(reftac, pet_img)
+                msg = "OneTCM model not available"
+                raise NotImplementedError(msg) from exc
+            km = OneTCM(input_tac, pet_img, blood_tac)
             km.fit(
                 mask=petmask_img_mat,
                 integration_type=integration_type,
@@ -445,10 +480,13 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
         case "twotcm":
             model_abbr = "2TCM"
             try:
-                from dynamicpet.kineticmodel.twotcm import TwoTCM  # type: ignore
+                from dynamicpet.kineticmodel.twotcm import (
+                    TwoTCM,  # type: ignore[import-not-found]
+                )
             except Exception as exc:  # pragma: no cover - optional dep
-                raise NotImplementedError("TwoTCM model not available") from exc
-            km = TwoTCM(reftac, pet_img)
+                msg = "TwoTCM model not available"
+                raise NotImplementedError(msg) from exc
+            km = TwoTCM(input_tac, pet_img, blood_tac)
             km.fit(
                 mask=petmask_img_mat,
                 integration_type=integration_type,
@@ -534,6 +572,8 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
         + (f"--refroi {refroi} " if refroi else f"--refmask {refmask} ")
         + (f"--outputdir {outputdir} " if outputdir else "")
         + (f"--json {json} " if json else "")
+        + (f"--plasmatac {plasmatac} " if plasmatac else "")
+        + (f"--bloodtac {bloodtac} " if bloodtac else "")
         + (f"--petmask {petmask} " if petmask else "")
         + f"--start {start} "
         + f"--end {end} "
@@ -566,13 +606,21 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
         json_dump(derivative_json_dict, f, indent=4)
 
 
-def parse_kineticmodel_inputs(
+def parse_kineticmodel_inputs(  # noqa: C901, PLR0913, PLR0912, PLR0915
     tac_object_file: str,
     tac_object_json: str | None = None,
     refroi: str | None = None,
     refmask: str | None = None,
     petmask: str | None = None,
-) -> tuple[PETBIDSImage | PETBIDSMatrix, TemporalMatrix, NumpyNumberArray | None]:
+    plasmatac: str | None = None,
+    bloodtac: str | None = None,
+) -> tuple[
+    PETBIDSImage | PETBIDSMatrix,
+    TemporalMatrix,
+    NumpyNumberArray | None,
+    TemporalMatrix | None,
+    TemporalMatrix | None,
+]:
     """Parse kinetic model inputs.
 
     Args:
@@ -586,43 +634,60 @@ def parse_kineticmodel_inputs(
                  indicating reference tissue (must be in alignment with PET).
         petmask: Used only if tac_object_file is an image file. Binary mask
                  specifying voxels where model should be fitted.
+        plasmatac: Plasma input TAC in tsv format for blood-based models
+        bloodtac: Whole blood TAC in tsv format for blood-based models
 
     Returns:
         tac_object: 3-D or 4-D PET image or 2-D TACs
         reftac: reference TAC
         petmask_img_mat: binary PET mask
+        plasma_tac: plasma input TAC if provided
+        blood_tac: whole blood TAC if provided
 
     Raises:
         ValueError: refroi or refmask is not specified, or PET and mask are not
                     in the same space
 
     """
-    if tac_object_file[-4:] == ".tsv":
-        # if it is a tsv, then read as PETBIDSMatrix
-        if not refroi:
-            msg = "refroi must be specified when tac_object is a tsv file"
-            raise ValueError(msg)
+    plasma_tm: PETBIDSMatrix | None = None
+    blood_tm: PETBIDSMatrix | None = None
+    plasma = None
+    blood = None
+    if plasmatac is not None:
+        plasma_tm = petbidsmatrix_load(plasmatac)
+        plasma = plasma_tm.get_elem(plasma_tm.elem_names[0])
+    if bloodtac is not None:
+        blood_tm = petbidsmatrix_load(bloodtac)
+        blood = blood_tm.get_elem(blood_tm.elem_names[0])
 
+    if tac_object_file[-4:] == ".tsv":
         tac_object_tm: PETBIDSMatrix = petbidsmatrix_load(
             tac_object_file,
             tac_object_json,
         )
-        reftac = tac_object_tm.get_elem(refroi)
+        if refroi:
+            reftac = tac_object_tm.get_elem(refroi)
+        elif plasma is not None:
+            reftac = plasma
+        else:
+            msg = "refroi must be specified when tac_object is a tsv file"
+            raise ValueError(msg)
 
-        return tac_object_tm, reftac, None
+        return tac_object_tm, reftac, None, plasma, blood
 
     # otherwise, read as PETBIDSImage
-    if not refmask:
+    if not refmask and plasma is None:
         msg = "refmask must be specified when tac_object is an image"
         raise ValueError(msg)
 
     tac_object: PETBIDSImage = petbidsimage_load(tac_object_file, tac_object_json)
-    refmask_img: SpatialImage = nib_load(refmask)  # type: ignore[assignment]
-    # check that refmask is in the same space as pet
-    if not np.all(tac_object.img.affine == refmask_img.affine):
-        msg = "PET and refmask are not in the same space"
-        raise ValueError(msg)
-    refmask_img_mat: NumpyNumberArray = refmask_img.get_fdata().astype("bool")
+    refmask_img_mat: NumpyNumberArray | None = None
+    if refmask:
+        refmask_img: SpatialImage = nib_load(refmask)  # type: ignore[assignment]
+        if not np.all(tac_object.img.affine == refmask_img.affine):
+            msg = "PET and refmask are not in the same space"
+            raise ValueError(msg)
+        refmask_img_mat = refmask_img.get_fdata().astype("bool")
 
     petmask_img_mat: NumpyNumberArray | None
     if petmask:
@@ -643,14 +708,21 @@ def parse_kineticmodel_inputs(
                 RuntimeWarning,
                 stacklevel=2,
             )
-            refmask_img_mat = refmask_img_mat * petmask_img_mat
+            if refmask_img_mat is not None:
+                refmask_img_mat = refmask_img_mat * petmask_img_mat
     else:
         petmask_img_mat = None
 
     # extract average TAC in reference region
-    reftac = tac_object.mean_timeseries_in_mask(refmask_img_mat)
+    if refmask_img_mat is not None:
+        reftac = tac_object.mean_timeseries_in_mask(refmask_img_mat)
+    elif plasma is not None:
+        reftac = plasma
+    else:
+        msg = "Unable to determine reference TAC"
+        raise ValueError(msg)
 
-    return tac_object, reftac, petmask_img_mat
+    return tac_object, reftac, petmask_img_mat, plasma, blood
 
 
 if __name__ == "__main__":

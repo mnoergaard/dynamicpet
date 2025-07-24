@@ -12,6 +12,7 @@ import requests  # consider revisiting betamax after urllib3 bug is fixed
 from click.testing import CliRunner
 from nibabel.loadsave import load as nib_load
 
+from dynamicpet.petbids import PETBIDSMatrix
 from dynamicpet.temporalobject.temporalimage import image_maker
 
 if TYPE_CHECKING:
@@ -107,6 +108,46 @@ def images() -> dict[str, Path]:
         "refmask_fname": refmask_fname,
         "rois_fname": rois_fname,
         "rois_csv_fname": rois_csv_fname,
+    }
+
+
+@pytest.fixture
+def tac_files(tmp_path: Path) -> dict[str, Path]:
+    """Create simple TAC, plasma, and blood files."""
+    frame_start = np.array([0, 60, 120], dtype=float)
+    frame_duration = np.array([60, 60, 60], dtype=float)
+
+    json_dict = {
+        "TimeZero": "00:00:00",
+        "FrameTimesStart": frame_start.tolist(),
+        "FrameDuration": frame_duration.tolist(),
+        "InjectionStart": 0,
+        "ScanStart": 0,
+        "TracerRadionuclide": "C11",
+        "ImageDecayCorrected": True,
+        "ImageDecayCorrectionTime": 0,
+    }
+
+    tacs = PETBIDSMatrix(
+        np.array([[5.0, 5.0, 5.0], [8.0, 8.0, 8.0]]),
+        json_dict,
+        ["ROI1", "ROI2"],
+    )
+    tac_file = tmp_path / "tacs.tsv"
+    tacs.to_filename(tac_file, save_json=True)
+
+    plasma = PETBIDSMatrix(np.array([10.0, 10.0, 10.0]), json_dict, ["plasma"])
+    plasma_file = tmp_path / "plasma.tsv"
+    plasma.to_filename(plasma_file, save_json=True)
+
+    blood = PETBIDSMatrix(np.array([12.0, 12.0, 12.0]), json_dict, ["blood"])
+    blood_file = tmp_path / "blood.tsv"
+    blood.to_filename(blood_file, save_json=True)
+
+    return {
+        "tacs": tac_file,
+        "plasma": plasma_file,
+        "blood": blood_file,
     }
 
 
@@ -346,3 +387,29 @@ def test_kineticmodel_srtmzhou2003(images: dict[str, Path]) -> None:
         outputdir / "sub-000101_ses-baseline_model-SRTM_meas-R1_mimap.nii"
     ).is_file(), msg
     assert (outputdir / "sub-000101_ses-baseline_model-SRTM_mimap.json").is_file(), msg
+
+
+def test_kineticmodel_ma1_plasma(tac_files: dict[str, Path]) -> None:
+    """Test MA1 kineticmodel with plasma and blood TACs."""
+    from dynamicpet.__main__ import kineticmodel
+
+    runner = CliRunner()
+    result = runner.invoke(
+        kineticmodel,
+        [
+            str(tac_files["tacs"]),
+            "--model",
+            "ma1",
+            "--plasmatac",
+            str(tac_files["plasma"]),
+            "--bloodtac",
+            str(tac_files["blood"]),
+            "--json",
+            str(tac_files["tacs"].with_suffix(".json")),
+        ],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, "Kineticmodel had an error"
+
+    out = tac_files["tacs"].with_name("tacs_model-MA1_kinpar.tsv")
+    assert out.is_file(), "Couldn't find kineticmodel output file"

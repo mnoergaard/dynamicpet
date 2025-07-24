@@ -93,6 +93,12 @@ After installing _Dynamic PET_ as described above, execute:
 kineticmodel PET --model SRTMZhou2003 --refmask <REFMASK> --outputdir <OUTPUTDIR> --fwhm 5
 ```
 
+For blood-based models such as MA1, provide the plasma and optional blood TACs:
+
+```console
+kineticmodel PET_TACS.tsv --model MA1 --plasmatac PLASMA.tsv --bloodtac BLOOD.tsv
+```
+
 where
 
 ```console
