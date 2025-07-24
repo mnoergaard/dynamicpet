@@ -34,6 +34,10 @@ IMPLEMENTED_KMS = [
     "SUVR",
     "SRTMLammertsma1996",
     "SRTMZhou2003",
+    "MA1",
+    "LoganBlood",
+    "OneTCM",
+    "TwoTCM",
 ]
 
 INTEGRATION_TYPES = (
@@ -202,7 +206,7 @@ def denoise(  # noqa: PLR0912, PLR0913
     "--model",
     type=click.Choice(IMPLEMENTED_KMS, case_sensitive=False),
     required=True,
-    help="Name of kinetic model",
+    help="Name of kinetic model (" + ", ".join(IMPLEMENTED_KMS) + ")",
 )
 @click.option(
     "--refroi",
@@ -287,6 +291,24 @@ def denoise(  # noqa: PLR0912, PLR0913
         "'rect' is rectangular integration."
     ),
 )
+@click.option(
+    "--tstar",
+    default=None,
+    type=float,
+    help="Time beyond which to assume linearity (for LoganBlood/MA1)",
+)
+@click.option(
+    "--vb-fixed",
+    default=None,
+    type=float,
+    help="Fixed fractional blood volume for compartmental models",
+)
+@click.option(
+    "--fit-end-time",
+    default=None,
+    type=float,
+    help="End time in min over which model is fitted",
+)
 def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
     pet: str,
     model: str,
@@ -298,6 +320,9 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
     start: float | None,
     end: float | None,
     fwhm: float | None,
+    tstar: float | None,
+    vb_fixed: float | None,
+    fit_end_time: float | None,
     weight_by: WEIGHT_OPTS = "frame_duration",
     integration_type: INTEGRATION_TYPE_OPTS = "trapz",
 ) -> None:
@@ -334,6 +359,27 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
             RuntimeWarning,
             stacklevel=2,
         )
+    if tstar is not None and model not in ["ma1", "loganblood"]:
+        tstar = None
+        warnings.warn(
+            "--tstar argument is not relevant for this model, will be ignored",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+    if vb_fixed is not None and model not in ["onetcm", "twotcm"]:
+        vb_fixed = None
+        warnings.warn(
+            "--vb-fixed argument is not relevant for this model, will be ignored",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+    if fit_end_time is not None and model not in ["ma1", "loganblood"]:
+        fit_end_time = None
+        warnings.warn(
+            "--fit-end-time argument is not relevant for this model, will be ignored",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     # fit kinetic model
     km: KineticModel
@@ -354,6 +400,60 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 integration_type=integration_type,
                 weight_by=weight_by,
                 fwhm=fwhm,
+            )
+        case "ma1":
+            model_abbr = "MA1"
+            try:
+                from dynamicpet.kineticmodel.ma1 import MA1  # type: ignore
+            except Exception as exc:  # pragma: no cover - optional dep
+                raise NotImplementedError("MA1 model not available") from exc
+            km = MA1(reftac, pet_img)
+            km.fit(
+                mask=petmask_img_mat,
+                integration_type=integration_type,
+                weight_by=weight_by,
+                tstar=tstar,
+                fit_end_time=fit_end_time,
+            )
+        case "loganblood":
+            model_abbr = "Logan"
+            try:
+                from dynamicpet.kineticmodel.logan import LoganBlood  # type: ignore
+            except Exception as exc:  # pragma: no cover - optional dep
+                raise NotImplementedError("LoganBlood model not available") from exc
+            km = LoganBlood(reftac, pet_img)
+            km.fit(
+                mask=petmask_img_mat,
+                integration_type=integration_type,
+                weight_by=weight_by,
+                tstar=tstar,
+                fit_end_time=fit_end_time,
+            )
+        case "onetcm":
+            model_abbr = "1TCM"
+            try:
+                from dynamicpet.kineticmodel.onetcm import OneTCM  # type: ignore
+            except Exception as exc:  # pragma: no cover - optional dep
+                raise NotImplementedError("OneTCM model not available") from exc
+            km = OneTCM(reftac, pet_img)
+            km.fit(
+                mask=petmask_img_mat,
+                integration_type=integration_type,
+                weight_by=weight_by,
+                vb_fixed=vb_fixed,
+            )
+        case "twotcm":
+            model_abbr = "2TCM"
+            try:
+                from dynamicpet.kineticmodel.twotcm import TwoTCM  # type: ignore
+            except Exception as exc:  # pragma: no cover - optional dep
+                raise NotImplementedError("TwoTCM model not available") from exc
+            km = TwoTCM(reftac, pet_img)
+            km.fit(
+                mask=petmask_img_mat,
+                integration_type=integration_type,
+                weight_by=weight_by,
+                vb_fixed=vb_fixed,
             )
         case _:
             msg = f"Model {model} is not supported"
@@ -416,6 +516,18 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
         inputvalues += [fwhm]
         inputvalueslabels += ["Full width at half max"]
         inputvaluesunits += ["mm"]
+    if tstar is not None:
+        inputvalues += [tstar]
+        inputvalueslabels += ["tstar"]
+        inputvaluesunits += ["min"]
+    if vb_fixed is not None:
+        inputvalues += [vb_fixed]
+        inputvalueslabels += ["Fixed blood volume fraction"]
+        inputvaluesunits += [""]
+    if fit_end_time is not None:
+        inputvalues += [fit_end_time]
+        inputvalueslabels += ["End time for fitting"]
+        inputvaluesunits += ["min"]
 
     cmd = (
         f"kineticmodel --model {model} "
@@ -426,6 +538,9 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
         + f"--start {start} "
         + f"--end {end} "
         + (f"--fwhm {fwhm} " if fwhm else "")
+        + (f"--tstar {tstar} " if tstar is not None else "")
+        + (f"--vb-fixed {vb_fixed} " if vb_fixed is not None else "")
+        + (f"--fit-end-time {fit_end_time} " if fit_end_time is not None else "")
         + f"--weight_by {weight_by} "
         + f"--integration_type {integration_type} "
         + pet
