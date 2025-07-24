@@ -22,7 +22,10 @@ from dynamicpet.petbids import PETBIDSImage, PETBIDSMatrix
 from dynamicpet.petbids.petbidsimage import load as petbidsimage_load
 from dynamicpet.petbids.petbidsmatrix import (
     load as petbidsmatrix_load,
-    load_inputfunction,
+    load_inputfunction as load_tac,
+)
+from dynamicpet.petbids.bloodstream import (
+    load_inputfunction as load_bloodstream_inputfunction,
 )
 from dynamicpet.temporalobject.temporalobject import INTEGRATION_TYPE_OPTS, WEIGHT_OPTS
 from dynamicpet.temporalobject import TemporalMatrix
@@ -272,6 +275,12 @@ def denoise(  # noqa: PLR0912, PLR0913
     help="TSV file containing whole-blood TAC",
 )
 @click.option(
+    "--inputfunction",
+    default=None,
+    type=str,
+    help="Bloodstream derivative TSV containing AIF and whole-blood curves",
+)
+@click.option(
     "--start",
     default=None,
     type=float,
@@ -334,6 +343,7 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
     petmask: str | None,
     plasmatac: str | None,
     bloodtac: str | None,
+    inputfunction: str | None,
     start: float | None,
     end: float | None,
     fwhm: float | None,
@@ -353,20 +363,25 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
     froot, ext, addext = splitext_addext(pet)
 
-    pet_img, reftac, petmask_img_mat = parse_kineticmodel_inputs(
+    (
+        pet_img,
+        reftac,
+        petmask_img_mat,
+        plasma_tm,
+        blood_tm,
+    ) = parse_kineticmodel_inputs(
         pet,
         json,
         refroi,
         refmask,
         petmask,
+        inputfunction,
     )
 
-    plasma_tm: TemporalMatrix | None = None
-    blood_tm: TemporalMatrix | None = None
     if plasmatac:
-        plasma_tm = load_inputfunction(plasmatac)
+        plasma_tm = load_tac(plasmatac)
     if bloodtac:
-        blood_tm = load_inputfunction(bloodtac, column="whole_blood")
+        blood_tm = load_tac(bloodtac, column="whole_blood")
 
     if start is None:
         start = pet_img.start_time
@@ -567,6 +582,7 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
         + (f"--petmask {petmask} " if petmask else "")
         + (f"--plasmatac {plasmatac} " if plasmatac else "")
         + (f"--bloodtac {bloodtac} " if bloodtac else "")
+        + (f"--inputfunction {inputfunction} " if inputfunction else "")
         + f"--start {start} "
         + f"--end {end} "
         + (f"--fwhm {fwhm} " if fwhm else "")
@@ -604,31 +620,49 @@ def parse_kineticmodel_inputs(
     refroi: str | None = None,
     refmask: str | None = None,
     petmask: str | None = None,
-) -> tuple[PETBIDSImage | PETBIDSMatrix, TemporalMatrix, NumpyNumberArray | None]:
+    inputfunction: str | None = None,
+) -> tuple[
+    PETBIDSImage | PETBIDSMatrix,
+    TemporalMatrix,
+    NumpyNumberArray | None,
+    TemporalMatrix | None,
+    TemporalMatrix | None,
+]:
     """Parse kinetic model inputs.
 
     Args:
         tac_object_file: 3-D or 4-D PET image file or a 2-D tabular TACs tsv file
         tac_object_json: PET-BIDS json accompanying tac_object_file
-                         (if not provided, will be assumed to have the same name
-                          as tac_object_file, except with a .json extension)
+            (if not provided, will be assumed to have the same name
+            as tac_object_file, except with a .json extension)
         refroi: Used only if tac_object_file is a tsv file. Name of reference
-                region as specified in the tsv file.
+            region as specified in the tsv file.
         refmask: Used only if tac_object_file is an image file. 3-D binary mask
-                 indicating reference tissue (must be in alignment with PET).
+            indicating reference tissue (must be in alignment with PET).
         petmask: Used only if tac_object_file is an image file. Binary mask
-                 specifying voxels where model should be fitted.
+            specifying voxels where model should be fitted.
+        inputfunction: Bloodstream derivative TSV containing arterial
+            input function and whole blood activity curves.
 
     Returns:
         tac_object: 3-D or 4-D PET image or 2-D TACs
         reftac: reference TAC
         petmask_img_mat: binary PET mask
+        plasma_tm: metabolite-corrected plasma TAC if ``inputfunction`` was
+            provided, otherwise ``None``
+        blood_tm: whole blood TAC if ``inputfunction`` was provided, otherwise
+            ``None``
 
     Raises:
         ValueError: refroi or refmask is not specified, or PET and mask are not
                     in the same space
 
     """
+    plasma_tm: TemporalMatrix | None = None
+    blood_tm: TemporalMatrix | None = None
+    if inputfunction:
+        plasma_tm, blood_tm = load_bloodstream_inputfunction(inputfunction)
+
     if tac_object_file[-4:] == ".tsv":
         # if it is a tsv, then read as PETBIDSMatrix
         if not refroi:
@@ -641,7 +675,7 @@ def parse_kineticmodel_inputs(
         )
         reftac = tac_object_tm.get_elem(refroi)
 
-        return tac_object_tm, reftac, None
+        return tac_object_tm, reftac, None, plasma_tm, blood_tm
 
     # otherwise, read as PETBIDSImage
     if not refmask:
@@ -682,7 +716,7 @@ def parse_kineticmodel_inputs(
     # extract average TAC in reference region
     reftac = tac_object.mean_timeseries_in_mask(refmask_img_mat)
 
-    return tac_object, reftac, petmask_img_mat
+    return tac_object, reftac, petmask_img_mat, plasma_tm, blood_tm
 
 
 if __name__ == "__main__":

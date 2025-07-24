@@ -35,10 +35,18 @@ in this file, as these will be extracted from the accompanying `.json` file (see
 ### Plasma/Blood TACs
 
 Blood-based models (MA1, Logan with plasma input, 1TCM, 2TCM) require a plasma
-TAC describing the radiotracer concentration in plasma.
-An optional whole blood TAC can also be provided for blood volume correction.
-These TACs should be in the same tsv format as described above and are supplied
-via the `--plasmatac` and `--bloodtac` options of `kineticmodel`.
+TAC describing the radiotracer concentration in plasma. An optional whole blood
+TAC can also be provided for blood volume correction. These TACs should be in
+the same tsv format as described above and are supplied via the `--plasmatac`
+and `--bloodtac` options of `kineticmodel`. Alternatively, a bloodstream
+derivative containing both curves can be specified with `--inputfunction`.
+
+Example using a bloodstream derivative:
+
+```console
+kineticmodel PET --model MA1 --refmask REFMASK \
+    --inputfunction sub-01_ses-baseline_inputfunction.tsv
+```
 
 ### Time framing information
 
