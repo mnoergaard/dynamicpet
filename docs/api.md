@@ -62,3 +62,27 @@ modeling, first extract this time interval and then fit the kinetic model.
    :members:
    :inherited-members:
 ```
+
+```{eval-rst}
+.. automodule:: dynamicpet.kineticmodel.ma1
+   :members:
+   :inherited-members:
+```
+
+```{eval-rst}
+.. automodule:: dynamicpet.kineticmodel.loganblood
+   :members:
+   :inherited-members:
+```
+
+```{eval-rst}
+.. automodule:: dynamicpet.kineticmodel.onetcm
+   :members:
+   :inherited-members:
+```
+
+```{eval-rst}
+.. automodule:: dynamicpet.kineticmodel.twotcm
+   :members:
+   :inherited-members:
+```

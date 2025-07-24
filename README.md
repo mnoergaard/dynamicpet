@@ -39,6 +39,16 @@ Methods implemented in the CLI include:
   - Standardized Uptake Value Ratio (SUVR)
   - Logan Reference Tissue Model ([LRTM])
   - Simplified Reference Tissue Model (SRTM)
+- Blood-based modeling
+  - Multilinear Analysis 1 (MA1)
+  - Logan Plot using plasma input
+  - One-Tissue Compartment Model (1TCM)
+  - Two-Tissue Compartment Model (2TCM)
+
+The blood-based models require a plasma TAC describing the
+radiotracer concentration in plasma. A whole blood TAC can also be
+provided for blood volume correction. These are supplied via the
+`--plasmatac` and `--bloodtac` options of the `kineticmodel` CLI.
 
 Several implementations of estimating SRTM parameters are available:
 

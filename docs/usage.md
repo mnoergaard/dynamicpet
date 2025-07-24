@@ -32,6 +32,14 @@ in this file, as these will be extracted from the accompanying `.json` file (see
 ...
 ```
 
+### Plasma/Blood TACs
+
+Blood-based models (MA1, Logan with plasma input, 1TCM, 2TCM) require a plasma
+TAC describing the radiotracer concentration in plasma.
+An optional whole blood TAC can also be provided for blood volume correction.
+These TACs should be in the same tsv format as described above and are supplied
+via the `--plasmatac` and `--bloodtac` options of `kineticmodel`.
+
 ### Time framing information
 
 Both PET image and TAC inputs should be accompanied by a `.json` file that follows the [PET-BIDS] specification. The `.json` file is not checked for compliance with the PET-BIDS specification, but should have the following fields for full functionality with _Dynamic PET_:
