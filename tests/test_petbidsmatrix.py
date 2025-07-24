@@ -139,3 +139,47 @@ def test_set_timezero(pm: PETBIDSMatrix) -> None:
     assert pm.frame_start[0] == zero, (
         f"Expected {zero} frame start, got {pm.frame_start[0]}"
     )
+
+
+def test_load_petprep(tmp_path: Path) -> None:
+    """Test loading PETPrep style TSV/JSON."""
+    tsv_src = Path(
+        "data/petprep/sub-01/ses-baseline/pet/sub-01_ses-baseline_ref-cerebellum_desc-gtm_timeseries.tsv"
+    )
+    json_src = Path(
+        "data/petprep/sub-01/ses-baseline/pet/sub-01_ses-baseline_ref-cerebellum_desc-gtm_timeseries.json"
+    )
+
+    tsv = tmp_path / tsv_src.name
+    jsonfile = tmp_path / json_src.name
+    jsonfile.write_text(json_src.read_text())
+    tsv.write_text(tsv_src.read_text())
+
+    import json
+
+    data = json.loads(jsonfile.read_text())
+    data.update(
+        {
+            "TimeZero": "10:00:00",
+            "InjectionStart": 0,
+            "ScanStart": 0,
+            "TracerRadionuclide": "C11",
+            "ImageDecayCorrected": True,
+            "ImageDecayCorrectionTime": 0,
+        }
+    )
+    jsonfile.write_text(json.dumps(data))
+
+    pm = load(tsv, jsonfile)
+
+    arr = np.genfromtxt(tsv, delimiter="\t", skip_header=1)
+    frame_start_exp = arr[:, 0] / 60
+    frame_duration_exp = (arr[:, 1] - arr[:, 0]) / 60
+
+    assert np.allclose(pm.frame_start, frame_start_exp), "frame start mismatch"
+    assert np.allclose(pm.frame_duration, frame_duration_exp), "duration mismatch"
+    assert pm.elem_names == ["cerebellum"], "element names mismatch"
+    assert pm.json_dict["FrameTimesStart"] == arr[:, 0].tolist(), "json start"
+    assert pm.json_dict["FrameDuration"] == (arr[:, 1] - arr[:, 0]).tolist(), (
+        "json duration"
+    )
