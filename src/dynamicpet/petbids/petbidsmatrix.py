@@ -203,8 +203,24 @@ def load(
     with fname.open() as f:
         tsvreader = csv.reader(f, delimiter="\t")
         header = next(tsvreader)
-
     tsv = np.genfromtxt(fname, delimiter="\t", skip_header=1)
+
+    if (
+        len(header) >= 2
+        and header[0] == "FrameTimesStart"
+        and header[1] == "FrameTimesEnd"
+    ):
+        frame_start = tsv[:, 0]
+        frame_end = tsv[:, 1]
+        frame_duration = frame_end - frame_start
+
+        if "FrameTimesStart" not in json_dict:
+            json_dict["FrameTimesStart"] = frame_start.tolist()
+        if "FrameDuration" not in json_dict:
+            json_dict["FrameDuration"] = frame_duration.tolist()
+
+        tsv = tsv[:, 2:]
+        header = header[2:]
 
     return PETBIDSMatrix(tsv.T, json_dict, header)
 
