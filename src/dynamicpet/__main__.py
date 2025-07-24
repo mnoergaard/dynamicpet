@@ -20,14 +20,17 @@ from dynamicpet.kineticmodel.srtm import SRTMLammertsma1996, SRTMZhou2003
 from dynamicpet.kineticmodel.suvr import SUVR
 from dynamicpet.petbids import PETBIDSImage, PETBIDSMatrix
 from dynamicpet.petbids.petbidsimage import load as petbidsimage_load
-from dynamicpet.petbids.petbidsmatrix import load as petbidsmatrix_load
+from dynamicpet.petbids.petbidsmatrix import (
+    load as petbidsmatrix_load,
+    load_inputfunction,
+)
 from dynamicpet.temporalobject.temporalobject import INTEGRATION_TYPE_OPTS, WEIGHT_OPTS
+from dynamicpet.temporalobject import TemporalMatrix
 
 if TYPE_CHECKING:
     from nibabel.spatialimages import SpatialImage
 
     from dynamicpet.kineticmodel.kineticmodel import KineticModel
-    from dynamicpet.temporalobject import TemporalMatrix
     from dynamicpet.typing_utils import NumpyNumberArray
 
 IMPLEMENTED_KMS = [
@@ -257,6 +260,18 @@ def denoise(  # noqa: PLR0912, PLR0913
     ),
 )
 @click.option(
+    "--plasmatac",
+    default=None,
+    type=str,
+    help="TSV file containing metabolite corrected plasma input function",
+)
+@click.option(
+    "--bloodtac",
+    default=None,
+    type=str,
+    help="TSV file containing whole-blood TAC",
+)
+@click.option(
     "--start",
     default=None,
     type=float,
@@ -317,6 +332,8 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
     outputdir: str | None,
     json: str | None,
     petmask: str | None,
+    plasmatac: str | None,
+    bloodtac: str | None,
     start: float | None,
     end: float | None,
     fwhm: float | None,
@@ -344,6 +361,13 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
         petmask,
     )
 
+    plasma_tm: TemporalMatrix | None = None
+    blood_tm: TemporalMatrix | None = None
+    if plasmatac:
+        plasma_tm = load_inputfunction(plasmatac)
+    if bloodtac:
+        blood_tm = load_inputfunction(bloodtac, column="whole_blood")
+
     if start is None:
         start = pet_img.start_time
     if end is None:
@@ -351,6 +375,10 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
     if start != pet_img.start_time or end != pet_img.end_time:
         pet_img = pet_img.extract(start, end)
         reftac = reftac.extract(start, end)
+        if plasma_tm is not None:
+            plasma_tm = plasma_tm.extract(start, end)
+        if blood_tm is not None:
+            blood_tm = blood_tm.extract(start, end)
 
     if fwhm and model not in ["srtmzhou2003"]:
         fwhm = None
@@ -407,7 +435,8 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 from dynamicpet.kineticmodel.ma1 import MA1  # type: ignore
             except Exception as exc:  # pragma: no cover - optional dep
                 raise NotImplementedError("MA1 model not available") from exc
-            km = MA1(reftac, pet_img)
+            cp = plasma_tm if plasma_tm is not None else reftac
+            km = MA1(cp, pet_img)
             km.fit(
                 mask=petmask_img_mat,
                 integration_type=integration_type,
@@ -421,7 +450,8 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 from dynamicpet.kineticmodel.logan import LoganBlood  # type: ignore
             except Exception as exc:  # pragma: no cover - optional dep
                 raise NotImplementedError("LoganBlood model not available") from exc
-            km = LoganBlood(reftac, pet_img)
+            cp = plasma_tm if plasma_tm is not None else reftac
+            km = LoganBlood(cp, pet_img)
             km.fit(
                 mask=petmask_img_mat,
                 integration_type=integration_type,
@@ -435,12 +465,12 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 from dynamicpet.kineticmodel.onetcm import OneTCM  # type: ignore
             except Exception as exc:  # pragma: no cover - optional dep
                 raise NotImplementedError("OneTCM model not available") from exc
-            km = OneTCM(reftac, pet_img)
+            cp = plasma_tm if plasma_tm is not None else reftac
+            km = OneTCM(cp, pet_img, blood_tm, vb_fixed)
             km.fit(
                 mask=petmask_img_mat,
                 integration_type=integration_type,
                 weight_by=weight_by,
-                vb_fixed=vb_fixed,
             )
         case "twotcm":
             model_abbr = "2TCM"
@@ -448,12 +478,12 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 from dynamicpet.kineticmodel.twotcm import TwoTCM  # type: ignore
             except Exception as exc:  # pragma: no cover - optional dep
                 raise NotImplementedError("TwoTCM model not available") from exc
-            km = TwoTCM(reftac, pet_img)
+            cp = plasma_tm if plasma_tm is not None else reftac
+            km = TwoTCM(cp, pet_img, blood_tm, vb_fixed)
             km.fit(
                 mask=petmask_img_mat,
                 integration_type=integration_type,
                 weight_by=weight_by,
-                vb_fixed=vb_fixed,
             )
         case _:
             msg = f"Model {model} is not supported"
@@ -535,6 +565,8 @@ def kineticmodel(  # noqa: C901, PLR0912, PLR0913, PLR0915
         + (f"--outputdir {outputdir} " if outputdir else "")
         + (f"--json {json} " if json else "")
         + (f"--petmask {petmask} " if petmask else "")
+        + (f"--plasmatac {plasmatac} " if plasmatac else "")
+        + (f"--bloodtac {bloodtac} " if bloodtac else "")
         + f"--start {start} "
         + f"--end {end} "
         + (f"--fwhm {fwhm} " if fwhm else "")

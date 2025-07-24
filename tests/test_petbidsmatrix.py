@@ -10,6 +10,7 @@ import pytest
 
 from dynamicpet.petbids import PETBIDSMatrix
 from dynamicpet.petbids.petbidsmatrix import load
+from dynamicpet.petbids.petbidsmatrix import load_inputfunction
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -139,3 +140,20 @@ def test_set_timezero(pm: PETBIDSMatrix) -> None:
     assert pm.frame_start[0] == zero, (
         f"Expected {zero} frame start, got {pm.frame_start[0]}"
     )
+
+
+def test_load_inputfunction() -> None:
+    """Test loading arterial input function."""
+    fname = (
+        Path(__file__).parents[1]
+        / "data"
+        / "bloodstream"
+        / "sub-01"
+        / "ses-baseline"
+        / "pet"
+        / "sub-01_ses-baseline_inputfunction.tsv"
+    )
+    tm = load_inputfunction(fname)
+
+    assert np.isclose(tm.frame_start[1] - tm.frame_start[0], 0.9004500750125021)
+    assert np.isclose(tm.dataobj[0, 1], 0.2904622438224163)

@@ -207,3 +207,62 @@ def load(
     tsv = np.genfromtxt(fname, delimiter="\t", skip_header=1)
 
     return PETBIDSMatrix(tsv.T, json_dict, header)
+
+
+def load_inputfunction(
+    filename: str | PathLike[str],
+    column: str = "aif",
+) -> TemporalMatrix:
+    """Load an arterial input function from a tsv file.
+
+    The tsv file should contain a ``time`` column in seconds and one or more
+    columns describing the blood activity curves. By default, the column named
+    ``AIF`` or the fifth column (zero-index 4) is used. ``column`` can be set to
+    ``"plasma"`` or ``"whole_blood"`` to load the corresponding columns if they
+    exist.
+
+    Args:
+        filename: path to the tsv file
+        column: which column to load (``"aif"`` | ``"plasma"`` |
+            ``"whole_blood"``)
+
+    Returns:
+        TemporalMatrix with times in seconds
+    """
+
+    fname = Path(filename)
+
+    with fname.open() as f:
+        reader = csv.reader(f, delimiter="\t")
+        header = next(reader)
+
+    header_lower = [h.lower() for h in header]
+    try:
+        time_idx = header_lower.index("time")
+    except ValueError as exc:  # pragma: no cover - sanity check
+        raise ValueError("time column not found") from exc
+
+    col_name = column.lower()
+    col_idx: int
+    if col_name in {"aif", "metabolite_corrected_aif"}:
+        if "aif" in header_lower:
+            col_idx = header_lower.index("aif")
+        else:
+            col_idx = 4  # default location
+    elif col_name in {"plasma", "plasma_radioactivity"}:
+        col_idx = header_lower.index("plasma_radioactivity")
+    elif col_name in {"whole_blood", "whole_blood_radioactivity"}:
+        col_idx = header_lower.index("whole_blood_radioactivity")
+    else:  # pragma: no cover - sanity check
+        raise ValueError(f"Unrecognized column: {column}")
+
+    tsv = np.genfromtxt(fname, delimiter="\t", skip_header=1)
+    times = tsv[:, time_idx].astype(float)
+    values = tsv[:, col_idx].astype(float)
+
+    if len(times) > 1:
+        frame_duration = np.diff(times, append=times[-1] + (times[-1] - times[-2]))
+    else:
+        frame_duration = np.array([1.0])
+
+    return TemporalMatrix(values, times, frame_duration, [header[col_idx]])
